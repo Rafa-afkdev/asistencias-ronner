@@ -15,7 +15,7 @@ const roboto = Roboto({
 
 export const metadata: Metadata = {
   title: "Sistema de Asistencias",
-  description: "Registro de asistencia para profesores",
+  description: "Registro de asistencia para personal",
 };
 
 export default function RootLayout({

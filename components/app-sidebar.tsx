@@ -28,8 +28,8 @@ const items = [
     icon: History,
   },
   {
-    title: "Profesores",
-    url: "/profesores",
+    title: "Personal",
+    url: "/personal",
     icon: Users,
   },
 ];

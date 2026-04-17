@@ -39,7 +39,7 @@ export default function ProfesoresPage() {
       // Solo mostrar los activos
       setProfesores(data.filter(p => p.activo !== false));
     } catch (error) {
-      console.error("Error al cargar profesores", error);
+      console.error("Error al cargar personal", error);
     } finally {
       setLoading(false);
     }
@@ -148,7 +148,7 @@ export default function ProfesoresPage() {
               ) : profesores.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={2} className="py-10 text-center text-muted-foreground">
-                    No hay profesores registrados.
+                    No hay Personal registrado.
                   </TableCell>
                 </TableRow>
               ) : (
