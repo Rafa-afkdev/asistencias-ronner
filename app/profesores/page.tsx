@@ -121,11 +121,11 @@ export default function ProfesoresPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Gestión de Profesores</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Gestión de Personal</h2>
           <p className="text-muted-foreground">Administra el personal docente de la institución.</p>
         </div>
         <Button onClick={handleOpenCreate}>
-          <Plus className="mr-2 h-4 w-4" /> Agregar Profesor
+          <Plus className="mr-2 h-4 w-4" /> Agregar Personal
         </Button>
       </div>
 

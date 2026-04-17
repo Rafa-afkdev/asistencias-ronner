@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getProfesores } from "@/lib/profesores";
-import { saveAsistencias } from "@/lib/asistencias";
+import { saveAsistencias, getAsistenciasByDate } from "@/lib/asistencias";
 import { Profesor, AsistenciaRow, AttendanceStatus, DiaSemana, DIAS_SEMANA } from "@/lib/types";
 import { JustifyModal } from "@/components/justify-modal";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -44,33 +44,54 @@ export default function Home() {
   
   const [justifyModalOpen, setJustifyModalOpen] = useState(false);
   const [currentProfesorToJustify, setCurrentProfesorToJustify] = useState<{id: string, nombre: string} | null>(null);
+  const [profesoresRegistrados, setProfesoresRegistrados] = useState<Set<string>>(new Set());
 
+  // Single effect to load data when `fecha` changes
   useEffect(() => {
-    loadProfesores();
-  }, []);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const data = await getProfesores();
+        const activos = data.filter(p => p.activo !== false);
+        setProfesores(activos);
+        
+        const registrosDate = await getAsistenciasByDate(fecha);
+        const registradosIds = new Set(registrosDate.map(r => r.profesorId));
+        setProfesoresRegistrados(registradosIds);
 
-  const loadProfesores = async () => {
-    try {
-      const data = await getProfesores();
-      const activos = data.filter(p => p.activo !== false);
-      setProfesores(activos);
-      
-      const initialAsistencias: Record<string, AsistenciaRow> = {};
-      activos.forEach(p => {
-        initialAsistencias[p.id] = {
-          profesorId: p.id,
-          profesorNombre: p.nombre,
-          status: "",
-          motivo: ""
-        };
-      });
-      setAsistencias(initialAsistencias);
-    } catch (error) {
-      console.error("Error loading profesores:", error);
-    } finally {
-      setLoading(false);
+        const initialAsistencias: Record<string, AsistenciaRow> = {};
+        activos.forEach(p => {
+          const registroExistente = registrosDate.find(r => r.profesorId === p.id);
+          if (registroExistente) {
+            initialAsistencias[p.id] = {
+              profesorId: p.id,
+              profesorNombre: p.nombre,
+              status: registroExistente.status as AttendanceStatus,
+              motivo: registroExistente.motivo || ""
+            };
+          } else {
+            initialAsistencias[p.id] = {
+              profesorId: p.id,
+              profesorNombre: p.nombre,
+              status: "",
+              motivo: ""
+            };
+          }
+        });
+        setAsistencias(initialAsistencias);
+
+      } catch (error) {
+        console.error("Error loading data:", error);
+        toast.error("Error al cargar la información inicial.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (fecha) {
+      loadData();
     }
-  };
+  }, [fecha]);
 
   const handleStatusChange = (profesorId: string, nombre: string, value: string) => {
     const newStatus = value as AttendanceStatus;
@@ -106,7 +127,7 @@ export default function Home() {
   const handleSaveAll = async () => {
     // Collect data to save
     const recordsToSave = Object.values(asistencias)
-      .filter(a => a.status !== "")
+      .filter(a => a.status !== "" && !profesoresRegistrados.has(a.profesorId))
       .map(a => ({
         profesorId: a.profesorId,
         profesorNombre: a.profesorNombre,
@@ -117,7 +138,7 @@ export default function Home() {
       }));
 
     if (recordsToSave.length === 0) {
-      toast.error("No hay asistencias marcadas para guardar.");
+      toast.error("No hay nuevas asistencias marcadas para guardar.");
       return;
     }
 
@@ -127,17 +148,11 @@ export default function Home() {
       const result = await saveAsistencias(recordsToSave);
       
       if (result.success) {
-        // Optimistic clear to show instant completion
-        const resetAsistencias: Record<string, AsistenciaRow> = {};
-        profesores.forEach(p => {
-          resetAsistencias[p.id] = {
-            profesorId: p.id,
-            profesorNombre: p.nombre,
-            status: "",
-            motivo: ""
-          };
-        });
-        setAsistencias(resetAsistencias);
+        // Marcamos los guardados como registrados
+        const newSet = new Set(profesoresRegistrados);
+        recordsToSave.forEach(r => newSet.add(r.profesorId));
+        setProfesoresRegistrados(newSet);
+        
         toast.success("Asistencias guardadas exitosamente.");
       } else {
         toast.error("Hubo un error al guardar las asistencias.");
@@ -150,7 +165,7 @@ export default function Home() {
     }
   };
 
-  const hasMissingStatus = Object.values(asistencias).some(a => a.status === "");
+  const hasMissingStatus = Object.values(asistencias).some(a => a.status === "" && !profesoresRegistrados.has(a.profesorId));
 
   if (loading) {
     return <div className="flex h-64 items-center justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
@@ -183,16 +198,18 @@ export default function Home() {
         </div>
         
         <div className="flex-1" />
-        
-        <Button 
-          onClick={handleSaveAll} 
-          disabled={saving || profesores.length === 0}
-          className="w-full md:w-auto"
-        >
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Guardar Asistencias
-        </Button>
       </div>
+
+      {profesores.length > 0 && profesoresRegistrados.size === profesores.length && (
+        <div className="bg-destructive/15 border border-destructive/30 text-destructive px-4 py-3 rounded-md text-sm font-medium">
+          Ya se completó el registro de asistencias para todos los profesores en esta fecha. No es posible generar duplicados.
+        </div>
+      )}
+      {profesores.length > 0 && profesoresRegistrados.size > 0 && profesoresRegistrados.size < profesores.length && (
+        <div className="bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 px-4 py-3 rounded-md text-sm font-medium">
+          Algunos profesores ya tienen su asistencia registrada en esta fecha. Selecciona el estado de los docentes faltantes.
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -229,6 +246,7 @@ export default function Home() {
                           <Select 
                             value={rowData?.status || ""} 
                             onValueChange={(val) => handleStatusChange(profesor.id, profesor.nombre, val)}
+                            disabled={profesoresRegistrados.has(profesor.id)}
                           >
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="Seleccionar..." />
@@ -260,6 +278,16 @@ export default function Home() {
           </div>
         </CardContent>
       </Card>
+
+      <Button 
+        onClick={handleSaveAll} 
+        disabled={saving || profesores.length === 0 || (profesoresRegistrados.size === profesores.length)}
+        className="w-full"
+        size="lg"
+      >
+        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Guardar Nuevas Asistencias
+      </Button>
 
       <JustifyModal
         open={justifyModalOpen}

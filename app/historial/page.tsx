@@ -18,7 +18,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Loader2, Search, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const formatDate = (dateString: string) => {
   if (!dateString) return "-";
@@ -33,7 +33,8 @@ export default function HistorialPage() {
   const [asistencias, setAsistencias] = useState<Asistencia[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [filtroFecha, setFiltroFecha] = useState("");
+  const [filtroFechaInicio, setFiltroFechaInicio] = useState("");
+  const [filtroFechaFin, setFiltroFechaFin] = useState("");
   const [filtroProfesor, setFiltroProfesor] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
 
@@ -58,13 +59,14 @@ export default function HistorialPage() {
 
   const asistenciasFiltradas = useMemo(() => {
     return asistencias.filter(a => {
-      const matchFecha = filtroFecha ? a.fecha === filtroFecha : true;
+      const matchFechaInicio = filtroFechaInicio ? a.fecha >= filtroFechaInicio : true;
+      const matchFechaFin = filtroFechaFin ? a.fecha <= filtroFechaFin : true;
       const matchProfesor = filtroProfesor ? a.profesorNombre.toLowerCase().includes(filtroProfesor.toLowerCase()) : true;
       const matchStatus = filtroStatus !== "Todos" ? a.status === filtroStatus : true;
       
-      return matchFecha && matchProfesor && matchStatus;
+      return matchFechaInicio && matchFechaFin && matchProfesor && matchStatus;
     });
-  }, [asistencias, filtroFecha, filtroProfesor, filtroStatus]);
+  }, [asistencias, filtroFechaInicio, filtroFechaFin, filtroProfesor, filtroStatus]);
 
   const handleDownloadPdf = async () => {
     try {
@@ -85,17 +87,73 @@ export default function HistorialPage() {
       });
       page.drawText(`Fecha de emision: ${fechaGeneracion}`, { x: 50, y: cursorY, size: 10, font });
       
-      if (filtroFecha) {
+      let filtroStr = "";
+      if (filtroFechaInicio && filtroFechaFin) {
+        filtroStr = `Desde ${formatDate(filtroFechaInicio)} hasta ${formatDate(filtroFechaFin)}`;
+      } else if (filtroFechaInicio) {
+        filtroStr = `Desde ${formatDate(filtroFechaInicio)}`;
+      } else if (filtroFechaFin) {
+        filtroStr = `Hasta ${formatDate(filtroFechaFin)}`;
+      }
+      
+      if (filtroStr) {
          cursorY -= 15;
-         page.drawText(`Filtro aplicado: ${formatDate(filtroFecha)}`, { x: 50, y: cursorY, size: 10, font });
+         page.drawText(`Filtro aplicado: ${filtroStr}`, { x: 50, y: cursorY, size: 10, font });
       }
 
       cursorY -= 30;
 
+      // --- Resumen ---
+      const resumen: Record<string, { asistencias: number, inasistencias: number, otras: number }> = {};
+      asistenciasFiltradas.forEach(a => {
+         const d = resumen[a.profesorNombre] || { asistencias: 0, inasistencias: 0, otras: 0 };
+         if (a.status === "Presente" || a.status === "Tarde") {
+           d.asistencias++;
+         } else if (a.status === "No Justificado") {
+           d.inasistencias++;
+         } else {
+           d.otras++; // "Justificada"
+         }
+         resumen[a.profesorNombre] = d;
+      });
+
+      page.drawText('Resumen de Asistencias e Inasistencias', { x: 50, y: cursorY, size: 14, font: fontBold });
+      cursorY -= 20;
+
+      page.drawText('Personal', { x: 50, y: cursorY, size: 10, font: fontBold });
+      page.drawText('Asist', { x: 300, y: cursorY, size: 10, font: fontBold });
+      page.drawText('Inasist', { x: 380, y: cursorY, size: 10, font: fontBold });
+      page.drawText('Justif', { x: 460, y: cursorY, size: 10, font: fontBold });
+      cursorY -= 15;
+
+      Object.entries(resumen).forEach(([n, count]) => {
+         if (cursorY < 50) {
+           page = pdfDoc.addPage([600, 800]);
+           cursorY = 750;
+         }
+         page.drawText(n.length > 35 ? n.substring(0, 32) + '...' : n, { x: 50, y: cursorY, size: 9, font });
+         page.drawText(count.asistencias.toString(), { x: 300, y: cursorY, size: 9, font });
+         page.drawText(count.inasistencias.toString(), { x: 380, y: cursorY, size: 9, font });
+         page.drawText(count.otras.toString(), { x: 460, y: cursorY, size: 9, font });
+         cursorY -= 15;
+      });
+
+      if (cursorY < 100) {
+         page = pdfDoc.addPage([600, 800]);
+         cursorY = 750;
+      }
+      
+      cursorY -= 10;
+      page.drawLine({ start: { x: 50, y: cursorY }, end: { x: 550, y: cursorY }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
+      cursorY -= 20;
+
       // Header table
+      page.drawText('Detalle de Registros', { x: 50, y: cursorY, size: 14, font: fontBold });
+      cursorY -= 20;
+
       page.drawText('Fecha', { x: 50, y: cursorY, size: 10, font: fontBold });
       page.drawText('Día', { x: 120, y: cursorY, size: 10, font: fontBold });
-      page.drawText('Profesor', { x: 180, y: cursorY, size: 10, font: fontBold });
+      page.drawText('Personal', { x: 180, y: cursorY, size: 10, font: fontBold });
       page.drawText('Estado', { x: 350, y: cursorY, size: 10, font: fontBold });
       page.drawText('Motivo', { x: 450, y: cursorY, size: 10, font: fontBold });
       cursorY -= 20;
@@ -144,19 +202,29 @@ export default function HistorialPage() {
           <h2 className="text-2xl font-bold tracking-tight">Historial de Asistencias</h2>
           <p className="text-muted-foreground">Consulta los registros de asistencia pasados.</p>
         </div>
-        <Button onClick={handleDownloadPdf} disabled={asistenciasFiltradas.length === 0}>
+        <Button onClick={handleDownloadPdf} disabled={asistenciasFiltradas.length === 0 || !filtroFechaInicio || !filtroFechaFin}>
           <Download className="mr-2 h-4 w-4" /> Exportar a PDF
         </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Filtrar por Fecha</label>
-          <Input 
-            type="date" 
-            value={filtroFecha}
-            onChange={(e) => setFiltroFecha(e.target.value)}
-          />
+        <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-1">
+          <label className="text-sm font-medium">Filtrar por Rango de Fecha</label>
+          <div className="flex items-center gap-2">
+            <Input 
+              type="date" 
+              value={filtroFechaInicio}
+              onChange={(e) => setFiltroFechaInicio(e.target.value)}
+              title="Fecha Inicio"
+            />
+            <span className="text-muted-foreground text-sm">-</span>
+            <Input 
+              type="date" 
+              value={filtroFechaFin}
+              onChange={(e) => setFiltroFechaFin(e.target.value)}
+              title="Fecha Fin"
+            />
+          </div>
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium">Filtrar por Profesor</label>
